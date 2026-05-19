@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -22,6 +22,13 @@ const CitizenProfilePage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+
+  const successTimer = useRef(null)
+  const showSuccessMsg = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
 
   useEffect(() => {
     if (citizen) {
@@ -62,7 +69,7 @@ const CitizenProfilePage = () => {
       const fn = citizen ? updateMyCitizen : createMyCitizen
       const res = await fn(form)
       setCitizen(res.data?.data)
-      setSaveSuccess(citizen ? 'Profile updated successfully.' : 'Profile created successfully.')
+      showSuccessMsg(citizen ? 'Profile updated successfully.' : 'Profile created successfully.')
       setEditing(false)
       setCreating(false)
     } catch (err) {

@@ -2,14 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useNotifications from '../../hooks/useNotifications'
 import useAuth from '../../hooks/useAuth'
-import { getNotificationPath, getNotificationPagePath, getCategoryBadgeClass } from '../../utils/notificationNavigation'
+import { getNotificationPath, getNotificationPagePath } from '../../utils/notificationNavigation'
 
 const formatDate = (iso) => {
   if (!iso) return ''
-  const d = new Date(iso)
-  const now = new Date()
-  const diffMs = now - d
-  const diffMins = Math.floor(diffMs / 60000)
+  const diffMins = Math.floor((Date.now() - new Date(iso)) / 60000)
   if (diffMins < 1)  return 'just now'
   if (diffMins < 60) return `${diffMins}m ago`
   const diffHrs = Math.floor(diffMins / 60)
@@ -17,127 +14,140 @@ const formatDate = (iso) => {
   return iso.slice(0, 10)
 }
 
+const BellIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  </svg>
+)
+
+const CATEGORY_COLORS = {
+  CASE:        { bg: '#dbeafe', color: '#1d4ed8' },
+  OUTBREAK:    { bg: '#fee2e2', color: '#b91c1c' },
+  VACCINATION: { bg: '#d1fae5', color: '#065f46' },
+  COMPLIANCE:  { bg: '#ede9fe', color: '#5b21b6' },
+  AUDIT:       { bg: '#f1f5f9', color: '#334155' },
+}
+
 const NotificationDropdown = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
   const { notifications, unreadCount, markAsRead, refresh } = useNotifications()
   const [open, setOpen] = useState(false)
-  const dropdownRef = useRef(null)
+  const ref = useRef(null)
 
-  // Close on outside click
   useEffect(() => {
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpen(false)
-      }
-    }
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleNotificationClick = async (n) => {
+  const handleClick = async (n) => {
     if (n.status === 'UNREAD') await markAsRead(n.id)
     setOpen(false)
     navigate(getNotificationPath(n.category, user?.role))
   }
 
-  const handleViewAll = () => {
-    setOpen(false)
-    navigate(getNotificationPagePath(user?.role))
-  }
-
-  // Show latest 6 — unread first (already sorted by hook)
   const preview = notifications.slice(0, 6)
 
   return (
-    <div className="position-relative" ref={dropdownRef}>
-      {/* Bell button */}
+    <div style={{ position: 'relative' }} ref={ref}>
       <button
         type="button"
-        className="btn btn-outline-secondary position-relative p-2"
         onClick={() => { setOpen(o => !o); if (!open) refresh() }}
         aria-label="Notifications"
-        style={{ borderRadius: '50%' }}
+        style={{
+          width: '36px', height: '36px', borderRadius: '50%',
+          border: '1.5px solid #e2e8f0', background: '#ffffff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', position: 'relative', color: '#475569',
+          transition: 'all 0.18s',
+        }}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 1 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
-        </svg>
+        <BellIcon />
         {unreadCount > 0 && (
-          <span
-            className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-            style={{ fontSize: '0.65rem', minWidth: '18px' }}
-          >
+          <span style={{
+            position: 'absolute', top: '-3px', right: '-3px',
+            background: '#ef4444', color: '#fff',
+            borderRadius: '999px', fontSize: '10px', fontWeight: '800',
+            padding: '1px 5px', minWidth: '16px', textAlign: 'center', lineHeight: '14px',
+            border: '2px solid #fff',
+          }}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
-      {/* Dropdown */}
       {open && (
-        <div
-          className="card shadow position-absolute end-0 mt-2"
-          style={{ width: '340px', zIndex: 1050, maxHeight: '480px', display: 'flex', flexDirection: 'column' }}
-        >
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+          width: '340px', zIndex: 1050,
+          background: '#ffffff', borderRadius: '16px',
+          border: '1px solid rgba(0,0,0,0.08)',
+          boxShadow: '0 16px 40px rgba(0,0,0,0.12)',
+          display: 'flex', flexDirection: 'column',
+          maxHeight: '480px', overflow: 'hidden',
+        }}>
           {/* Header */}
-          <div className="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
-            <span className="fw-semibold">Notifications</span>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontWeight: '800', fontSize: '14px', color: '#0f172a' }}>Notifications</span>
             {unreadCount > 0 && (
-              <span className="badge bg-danger rounded-pill">{unreadCount} unread</span>
+              <span style={{ background: '#fee2e2', color: '#b91c1c', borderRadius: '999px', fontSize: '11px', fontWeight: '700', padding: '2px 8px' }}>
+                {unreadCount} unread
+              </span>
             )}
           </div>
 
           {/* List */}
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {preview.length === 0 ? (
-              <div className="text-center text-muted small py-4">
-                ✅ You're all caught up!
+              <div style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8', fontSize: '13px' }}>
+                ✅ You&apos;re all caught up!
               </div>
-            ) : (
-              <ul className="list-unstyled mb-0">
-                {preview.map(n => {
-                  const isUnread = n.status === 'UNREAD'
-                  return (
-                    <li
-                      key={n.id}
-                      className={`px-3 py-2 border-bottom ${isUnread ? 'bg-primary bg-opacity-10' : ''}`}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handleNotificationClick(n)}
-                    >
-                      <div className="d-flex align-items-start gap-2">
-                        {/* Unread dot */}
-                        <div className="flex-shrink-0 mt-1">
-                          {isUnread
-                            ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0d6efd', display: 'inline-block' }} />
-                            : <span style={{ width: 8, height: 8, display: 'inline-block' }} />
-                          }
-                        </div>
-                        <div className="flex-fill" style={{ minWidth: 0 }}>
-                          <div className={`small ${isUnread ? 'fw-semibold' : 'text-muted'}`} style={{ lineHeight: 1.3 }}>
-                            {n.message}
-                          </div>
-                          <div className="d-flex align-items-center gap-2 mt-1">
-                            <span className={`badge ${getCategoryBadgeClass(n.category)}`} style={{ fontSize: '0.6rem' }}>
-                              {n.category}
-                            </span>
-                            <span className="text-muted" style={{ fontSize: '0.68rem' }}>
-                              {formatDate(n.createdDate)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            ) : preview.map(n => {
+              const isUnread = n.status === 'UNREAD'
+              const cat = CATEGORY_COLORS[n.category] ?? { bg: '#f1f5f9', color: '#334155' }
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => handleClick(n)}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #f8fafc',
+                    cursor: 'pointer',
+                    background: isUnread ? 'linear-gradient(135deg, rgba(13,110,253,0.06), rgba(96,165,250,0.04))' : '#ffffff',
+                    display: 'flex', gap: '10px', alignItems: 'flex-start',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flexShrink: 0, background: isUnread ? '#3182ce' : '#cbd5e1' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: isUnread ? '700' : '500', color: isUnread ? '#0f172a' : '#64748b', lineHeight: 1.4 }}>
+                      {n.message}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '999px', background: cat.bg, color: cat.color }}>
+                        {n.category}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>{formatDate(n.createdDate)}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
           {/* Footer */}
-          <div className="px-3 py-2 border-top text-center">
+          <div style={{ padding: '10px 16px', borderTop: '1px solid #f1f5f9' }}>
             <button
               type="button"
-              className="btn btn-sm btn-outline-primary w-100"
-              onClick={handleViewAll}
+              onClick={() => { setOpen(false); navigate(getNotificationPagePath(user?.role)) }}
+              style={{
+                width: '100%', height: '36px', borderRadius: '9px',
+                border: '1.5px solid #e2e8f0', background: '#ffffff',
+                fontSize: '13px', fontWeight: '700', color: '#475569',
+                cursor: 'pointer', transition: 'all 0.18s',
+              }}
             >
               View all notifications
             </button>

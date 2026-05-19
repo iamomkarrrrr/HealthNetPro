@@ -4,9 +4,9 @@ import { getToken, removeAuthData } from '../utils/tokenStorage'
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  // Do not set a fixed Content-Type globally. Let axios/browser determine it
+  // per-request (important for FormData multipart uploads).
+  timeout: 15000, // 15 seconds timeout to avoid indefinite hanging requests
 })
 
 axiosClient.interceptors.request.use(
@@ -14,6 +14,10 @@ axiosClient.interceptors.request.use(
     const token = getToken()
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    // If sending FormData, remove any forced Content-Type so browser can add boundary
+    if (config.data && typeof FormData !== 'undefined' && config.data instanceof FormData && config.headers) {
+      delete config.headers['Content-Type']
     }
     return config
   },

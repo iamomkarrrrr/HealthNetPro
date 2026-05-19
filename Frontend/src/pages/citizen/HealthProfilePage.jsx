@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -27,6 +27,13 @@ const HealthProfilePage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+
+  const successTimer = useRef(null)
+  const showSuccessMsg = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
 
   const fetchProfile = useCallback(() => {
     if (!citizenId) return
@@ -65,10 +72,10 @@ const HealthProfilePage = () => {
     try {
       if (pageState === 'create') {
         await createHealthProfile({ citizenId, ...form })
-        setSaveSuccess('Health profile created successfully.')
+        showSuccessMsg('Health profile created successfully.')
       } else {
         await updateHealthProfile(profile.id, form)
-        setSaveSuccess('Health profile updated successfully.')
+        showSuccessMsg('Health profile updated successfully.')
       }
       fetchProfile()
     } catch (err) {

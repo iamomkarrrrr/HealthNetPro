@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -27,6 +27,7 @@ const EpidemiologyDataPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const [fetchError, setFetchError] = useState('')
 
   useEffect(() => {
@@ -36,20 +37,24 @@ const EpidemiologyDataPage = () => {
       .finally(() => setLoadingOutbreaks(false))
   }, [])
 
-  const fetchData = useCallback(() => {
-    if (!selectedOutbreakId) return
+  const successTimer = useRef(null)
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
+
+  const fetchData = useCallback((outbreakId) => {
+    if (!outbreakId) return
     setLoadingData(true)
     setFetchError('')
-    getEpidemiologyDataByOutbreakId(selectedOutbreakId)
+    getEpidemiologyDataByOutbreakId(outbreakId)
       .then(res => setDataList(res.data?.data ?? []))
-      .catch(err => {
-        setFetchError(err?.response?.data?.message || 'Failed to load epidemiology data')
-        setDataList([])
-      })
+      .catch(err => { setFetchError(err?.response?.data?.message || 'Failed to load epidemiology data'); setDataList([]) })
       .finally(() => setLoadingData(false))
-  }, [selectedOutbreakId])
+  }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { fetchData(selectedOutbreakId) }, [selectedOutbreakId, fetchData])
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -79,16 +84,28 @@ const EpidemiologyDataPage = () => {
     setSaving(true)
     try {
       if (editTarget) {
-        await updateEpidemiologyData(editTarget.id, { metricsJson: form.metricsJson, date: form.date, status: form.status })
-        setSaveSuccess('Epidemiology data updated successfully.')
+        const res = await updateEpidemiologyData(editTarget.id, { metricsJson: form.metricsJson, date: form.date, status: form.status })
+        const updated = res.data?.data ?? { ...editTarget, ...form }
+        setDataList(prev => prev.map(d => d.id === editTarget.id ? { ...d, ...updated } : d))
+        showSuccess('Epidemiology data updated successfully.')
       } else {
-        await createEpidemiologyData({ outbreakId: Number(selectedOutbreakId), metricsJson: form.metricsJson, date: form.date, status: form.status })
-        setSaveSuccess('Epidemiology data created successfully.')
+        const res = await createEpidemiologyData({ outbreakId: Number(selectedOutbreakId), metricsJson: form.metricsJson, date: form.date, status: form.status })
+        const created = res.data?.data
+        if (created) {
+          setDataList(prev => [created, ...prev])
+        } else {
+          // Background refresh without blocking UI
+          setRefreshing(true)
+          getEpidemiologyDataByOutbreakId(selectedOutbreakId)
+            .then(r => setDataList(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Epidemiology data created successfully.')
       }
       setForm(EMPTY_FORM)
       setShowForm(false)
       setEditTarget(null)
-      fetchData()
     } catch (err) {
       setSaveError(err?.response?.data?.message || 'Failed to save epidemiology data')
     } finally {
@@ -107,6 +124,12 @@ const EpidemiologyDataPage = () => {
 
       {saveError && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing data…
+        </div>
+      )}
 
       {/* Outbreak selector */}
       <Card title="Select Outbreak" className="mb-4">

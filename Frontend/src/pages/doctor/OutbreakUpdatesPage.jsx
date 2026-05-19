@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
-import Card from '../../components/common/Card'
-import Button from '../../components/common/Button'
 import Loader from '../../components/common/Loader'
 import StatusBadge from '../../components/common/StatusBadge'
-import { getAllOutbreaks, createOutbreak } from '../../api/outbreakApi'
+import { getAllOutbreaks } from '../../api/outbreakApi'
 
 const OUTBREAK_STATUSES = ['DETECTED', 'ACTIVE', 'CONTAINED', 'CLOSED']
-const EMPTY_FORM = { diseaseType: '', location: '', startDate: new Date().toISOString().slice(0, 10), endDate: '', status: 'DETECTED' }
+const EMPTY_FORM = null
 
 const OutbreakUpdatesPage = () => {
   const [outbreaks, setOutbreaks] = useState([])
@@ -15,12 +13,6 @@ const OutbreakUpdatesPage = () => {
   const [accessDenied, setAccessDenied] = useState(false)
   const [fetchError, setFetchError] = useState('')
   const [filter, setFilter] = useState('ALL')
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
-  const [saveSuccess, setSaveSuccess] = useState('')
-  const [createDenied, setCreateDenied] = useState(false)
 
   const fetchOutbreaks = useCallback(() => {
     setLoading(true)
@@ -37,40 +29,7 @@ const OutbreakUpdatesPage = () => {
 
   useEffect(() => { fetchOutbreaks() }, [fetchOutbreaks])
 
-  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
-
-  const handleSubmit = async e => {
-    e.preventDefault()
-    setSaveError('')
-    setSaveSuccess('')
-    setCreateDenied(false)
-    if (!form.diseaseType.trim() || !form.location.trim() || !form.startDate) {
-      setSaveError('Disease type, location, and start date are required.')
-      return
-    }
-    setSaving(true)
-    try {
-      await createOutbreak({
-        diseaseType: form.diseaseType,
-        location: form.location,
-        startDate: form.startDate,
-        endDate: form.endDate || null,
-        status: form.status,
-      })
-      setSaveSuccess('Suspected outbreak reported successfully.')
-      setForm(EMPTY_FORM)
-      setShowForm(false)
-      fetchOutbreaks()
-    } catch (err) {
-      if (err?.response?.status === 403) {
-        setCreateDenied(true)
-      } else {
-        setSaveError(err?.response?.data?.message || 'Failed to report outbreak')
-      }
-    } finally {
-      setSaving(false)
-    }
-  }
+  // This page is view-only for DOCTOR role: no create handlers are present here.
 
   const active = outbreaks.filter(o => ['DETECTED', 'ACTIVE'].includes(o.status))
   const filtered = filter === 'ALL' ? outbreaks : outbreaks.filter(o => o.status === filter)
@@ -80,13 +39,8 @@ const OutbreakUpdatesPage = () => {
       <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
           <h2 className="page-title">Outbreak Updates</h2>
-          <p className="text-muted mb-0">Monitor disease outbreaks and report suspected cases.</p>
+          <p className="text-muted mb-0">Monitor active disease outbreaks and stay updated with public health alerts.</p>
         </div>
-        {!accessDenied && (
-          <Button onClick={() => { setShowForm(!showForm); setSaveError(''); setSaveSuccess('') }}>
-            {showForm ? 'Cancel' : '+ Report Suspected Outbreak'}
-          </Button>
-        )}
       </div>
 
       {/* 403 read access denied */}
@@ -103,51 +57,7 @@ const OutbreakUpdatesPage = () => {
       )}
 
       {fetchError && <div className="alert alert-danger py-2">{fetchError}</div>}
-      {saveError && <div className="alert alert-danger py-2">{saveError}</div>}
-      {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
-
-      {/* Create denied message */}
-      {createDenied && (
-        <div className="alert alert-warning">
-          Your role currently does not have permission to create outbreaks. Please contact Admin or Epidemiologist.
-        </div>
-      )}
-
-      {/* Report form */}
-      {showForm && !accessDenied && (
-        <Card title="Report Suspected Outbreak" className="mb-4">
-          <form onSubmit={handleSubmit} noValidate>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">Disease Type <span className="text-danger">*</span></label>
-                <input type="text" name="diseaseType" className="form-control" value={form.diseaseType} onChange={handleChange} placeholder="e.g. Dengue" />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label">Location <span className="text-danger">*</span></label>
-                <input type="text" name="location" className="form-control" value={form.location} onChange={handleChange} placeholder="e.g. Chennai" />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Start Date <span className="text-danger">*</span></label>
-                <input type="date" name="startDate" className="form-control" value={form.startDate} onChange={handleChange} />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">End Date <span className="text-muted small">(optional)</span></label>
-                <input type="date" name="endDate" className="form-control" value={form.endDate} onChange={handleChange} />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Status</label>
-                <select name="status" className="form-select" value={form.status} onChange={handleChange}>
-                  {OUTBREAK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="d-flex gap-2 mt-3">
-              <Button type="submit" disabled={saving}>{saving ? 'Submitting…' : 'Submit Report'}</Button>
-              <Button variant="outline-secondary" onClick={() => setShowForm(false)}>Cancel</Button>
-            </div>
-          </form>
-        </Card>
-      )}
+      {/* No create UI for DOCTOR role: view-only page. */}
 
       {!accessDenied && !fetchError && (
         <>

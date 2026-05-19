@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -20,37 +20,38 @@ const OutbreaksPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const successTimer = useRef(null)
 
-  const fetchAll = useCallback(() => {
+  useEffect(() => {
+    let mounted = true
     setLoading(true)
     getAllOutbreaks()
-      .then(res => setOutbreaks(res.data?.data ?? []))
+      .then(res => { if (mounted) setOutbreaks(res.data?.data ?? []) })
       .catch(err => {
+        if (!mounted) return
         if (err?.response?.status === 403) setFetchError('Access denied. Backend must allow EPIDEMIOLOGIST read access to GET /api/v1/outbreaks.')
         else if (!err?.response) setFetchError('Backend server is not reachable.')
         else setFetchError(err?.response?.data?.message || 'Failed to load outbreaks')
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
-  const openCreate = () => {
-    setEditTarget(null)
-    setForm(EMPTY)
-    setSaveError('')
-    setSaveSuccess('')
-    setShowForm(true)
-  }
+  const openCreate = () => { setEditTarget(null); setForm(EMPTY); setSaveError(''); setSaveSuccess(''); setShowForm(true) }
 
   const openEdit = o => {
     setEditTarget(o)
     setForm({ diseaseType: o.diseaseType, location: o.location, startDate: o.startDate, endDate: o.endDate ?? '', status: o.status })
-    setSaveError('')
-    setSaveSuccess('')
-    setShowForm(true)
+    setSaveError(''); setSaveSuccess(''); setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -64,24 +65,36 @@ const OutbreaksPage = () => {
 
   const handleSubmit = async e => {
     e.preventDefault()
-    const err = validate()
-    if (err) { setSaveError(err); return }
+    const validErr = validate()
+    if (validErr) { setSaveError(validErr); return }
     setSaving(true)
     setSaveError('')
     setSaveSuccess('')
     try {
       const payload = { diseaseType: form.diseaseType, location: form.location, startDate: form.startDate, endDate: form.endDate || null, status: form.status }
       if (editTarget) {
-        await updateOutbreak(editTarget.id, payload)
-        setSaveSuccess('Outbreak updated successfully.')
+        const res = await updateOutbreak(editTarget.id, payload)
+        const updated = res.data?.data ?? { ...editTarget, ...payload }
+        setOutbreaks(prev => prev.map(o => o.id === editTarget.id ? { ...o, ...updated } : o))
+        showSuccess('Outbreak updated successfully.')
       } else {
-        await createOutbreak(payload)
-        setSaveSuccess('Outbreak created successfully.')
+        const res = await createOutbreak(payload)
+        const created = res.data?.data
+        if (created) {
+          setOutbreaks(prev => [created, ...prev])
+        } else {
+          // Background refresh without blocking UI — show subtle refreshing state
+          setRefreshing(true)
+          getAllOutbreaks()
+            .then(r => setOutbreaks(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Outbreak created successfully.')
       }
       setForm(EMPTY)
       setShowForm(false)
       setEditTarget(null)
-      fetchAll()
     } catch (err) {
       if (err?.response?.status === 403) setSaveError('Access denied. Your role may not have permission to create/update outbreaks.')
       else setSaveError(err?.response?.data?.message || 'Failed to save outbreak')
@@ -103,9 +116,15 @@ const OutbreaksPage = () => {
         <Button onClick={openCreate}>+ New Outbreak</Button>
       </div>
 
-      {fetchError && <div className="alert alert-warning">{fetchError}</div>}
-      {saveError && <div className="alert alert-danger py-2">{saveError}</div>}
+      {fetchError  && <div className="alert alert-warning">{fetchError}</div>}
+      {saveError   && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing outbreaks…
+        </div>
+      )}
 
       {activeCount > 0 && (
         <div className="alert alert-danger d-flex align-items-center gap-2 mb-4">
@@ -114,7 +133,6 @@ const OutbreaksPage = () => {
         </div>
       )}
 
-      {/* Create / Edit form */}
       {showForm && (
         <Card title={editTarget ? `Edit Outbreak #${editTarget.id}` : 'Create New Outbreak'} className="mb-4">
           <form onSubmit={handleSubmit} noValidate>
@@ -134,8 +152,7 @@ const OutbreaksPage = () => {
               <div className="col-md-4">
                 <label className="form-label">
                   End Date{' '}
-                  {['CONTAINED', 'CLOSED'].includes(form.status) && <span className="text-danger">*</span>}
-                  {!['CONTAINED', 'CLOSED'].includes(form.status) && <span className="text-muted small">(optional)</span>}
+                  {['CONTAINED', 'CLOSED'].includes(form.status) ? <span className="text-danger">*</span> : <span className="text-muted small">(optional)</span>}
                 </label>
                 <input type="date" name="endDate" className="form-control" value={form.endDate} onChange={handleChange} />
               </div>
@@ -154,7 +171,6 @@ const OutbreaksPage = () => {
         </Card>
       )}
 
-      {/* Filter tabs */}
       <div className="d-flex gap-2 mb-3 flex-wrap">
         {['ALL', ...STATUSES].map(s => (
           <button key={s} className={`btn btn-sm ${filter === s ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setFilter(s)}>{s}</button>
@@ -167,15 +183,7 @@ const OutbreaksPage = () => {
         <div className="table-responsive">
           <table className="table table-hover align-middle">
             <thead className="table-light">
-              <tr>
-                <th>ID</th>
-                <th>Disease Type</th>
-                <th>Location</th>
-                <th>Start Date</th>
-                <th>End Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
+              <tr><th>ID</th><th>Disease Type</th><th>Location</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map(o => (

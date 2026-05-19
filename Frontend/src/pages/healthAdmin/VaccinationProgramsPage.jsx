@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -20,19 +20,28 @@ const VaccinationProgramsPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
-  const fetchAll = useCallback(() => {
+  const successTimer = useRef(null)
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
+
+  useEffect(() => {
+    let mounted = true
     setLoading(true)
     getVaccinationPrograms()
-      .then(res => setPrograms(res.data?.data ?? []))
+      .then(res => { if (mounted) setPrograms(res.data?.data ?? []) })
       .catch(err => {
+        if (!mounted) return
         if (err?.response?.status === 403) setFetchError('Access denied. Backend permissions required.')
         else setFetchError(err?.response?.data?.message || 'Failed to load vaccination programs')
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [])
-
-  useEffect(() => { fetchAll() }, [fetchAll])
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -71,16 +80,28 @@ const VaccinationProgramsPage = () => {
     try {
       const payload = { title: form.title, description: form.description, vaccineType: form.vaccineType || null, startDate: form.startDate, endDate: form.endDate || null, status: form.status }
       if (editTarget) {
-        await updateVaccinationProgram(editTarget.id, payload)
-        setSaveSuccess('Program updated successfully.')
+        const res = await updateVaccinationProgram(editTarget.id, payload)
+        const updated = res.data?.data ?? { ...editTarget, ...payload }
+        setPrograms(prev => prev.map(p => p.id === editTarget.id ? { ...p, ...updated } : p))
+        showSuccess('Program updated successfully.')
       } else {
-        await createVaccinationProgram(payload)
-        setSaveSuccess('Program created successfully.')
+        const res = await createVaccinationProgram(payload)
+        const created = res.data?.data
+        if (created) {
+          setPrograms(prev => [created, ...prev])
+        } else {
+          // Background refresh without blocking UI
+          setRefreshing(true)
+          getVaccinationPrograms()
+            .then(r => setPrograms(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Program created successfully.')
       }
       setForm(EMPTY)
       setShowForm(false)
       setEditTarget(null)
-      fetchAll()
     } catch (err) {
       if (err?.response?.status === 403) setSaveError('Access denied. Your role may not have permission to manage vaccination programs.')
       else setSaveError(err?.response?.data?.message || 'Failed to save program')
@@ -104,6 +125,12 @@ const VaccinationProgramsPage = () => {
       {fetchError && <div className="alert alert-warning">{fetchError}</div>}
       {saveError && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing programs…
+        </div>
+      )}
 
       {showForm && (
         <Card title={editTarget ? `Edit Program #${editTarget.id}` : 'Create Vaccination Program'} className="mb-4">

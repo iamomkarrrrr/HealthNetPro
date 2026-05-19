@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
 import Loader from '../../components/common/Loader'
 import StatusBadge from '../../components/common/StatusBadge'
 import useAuth from '../../hooks/useAuth'
-import { getAuditsByOfficerId, getAuditsByStatus, createAudit, updateAudit } from '../../api/auditApi'
+import { getAuditsByOfficerId, createAudit, updateAudit } from '../../api/auditApi'
 
 const STATUSES = ['OPEN', 'IN_REVIEW', 'CLOSED']
 const SCOPES   = ['CASE', 'OUTBREAK', 'VACCINATION', 'COMPLIANCE']
@@ -23,22 +23,30 @@ const AuditsPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
-  const fetchAudits = useCallback(() => {
+  const successTimer = useRef(null)
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
+
+  useEffect(() => {
     if (!user?.userId) return
+    let mounted = true
     setLoading(true)
-    setFetchError('')
     getAuditsByOfficerId(user.userId)
-      .then(res => setAudits(res.data?.data ?? []))
+      .then(res => { if (mounted) setAudits(res.data?.data ?? []) })
       .catch(err => {
+        if (!mounted) return
         if (err?.response?.status === 403) setFetchError('Access denied. Your role may not have permission to view audits.')
         else if (!err?.response) setFetchError('Backend server is not reachable.')
         else setFetchError(err?.response?.data?.message || 'Failed to load audits')
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [user?.userId])
-
-  useEffect(() => { fetchAudits() }, [fetchAudits])
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -68,16 +76,28 @@ const AuditsPage = () => {
     setSaving(true)
     try {
       if (editTarget) {
-        await updateAudit(editTarget.id, { scope: form.scope, findings: form.findings, date: form.date, status: form.status })
-        setSaveSuccess('Audit updated successfully.')
+        const res = await updateAudit(editTarget.id, { scope: form.scope, findings: form.findings, date: form.date, status: form.status })
+        const updated = res.data?.data ?? { ...editTarget, ...form }
+        setAudits(prev => prev.map(a => a.id === editTarget.id ? { ...a, ...updated } : a))
+        showSuccess('Audit updated successfully.')
       } else {
-        await createAudit({ officerId: user.userId, scope: form.scope, findings: form.findings, date: form.date, status: form.status })
-        setSaveSuccess('Audit created successfully.')
+        const res = await createAudit({ officerId: user.userId, scope: form.scope, findings: form.findings, date: form.date, status: form.status })
+        const created = res.data?.data
+        if (created) {
+          setAudits(prev => [created, ...prev])
+        } else {
+          // Background refresh without blocking UI
+          setRefreshing(true)
+          getAuditsByOfficerId(user.userId)
+            .then(r => setAudits(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Audit created successfully.')
       }
       setForm(EMPTY)
       setShowForm(false)
       setEditTarget(null)
-      fetchAudits()
     } catch (err) {
       if (err?.response?.status === 403) setSaveError('Access denied. Your role may not have permission to manage audits.')
       else setSaveError(err?.response?.data?.message || 'Failed to save audit')
@@ -101,6 +121,12 @@ const AuditsPage = () => {
       {fetchError && <div className="alert alert-warning">{fetchError}</div>}
       {saveError  && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing audits…
+        </div>
+      )}
 
       {/* Create / Edit form */}
       {showForm && (

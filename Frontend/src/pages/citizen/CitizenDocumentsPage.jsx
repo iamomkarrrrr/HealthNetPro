@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -18,6 +18,13 @@ const CitizenDocumentsPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState('')
   const [saveError, setSaveError] = useState('')
+
+  const successTimer = useRef(null)
+  const showSuccessMsg = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
 
   const fetchDocuments = useCallback(() => {
     if (!citizenId) return
@@ -51,16 +58,21 @@ const CitizenDocumentsPage = () => {
     if (!form.fileUri.trim()) { setFormError('File URI is required'); return }
     setSaving(true)
     try {
-      await createCitizenDocument({
+      const res = await createCitizenDocument({
         citizenId,
         docType: form.docType,
         fileUri: form.fileUri.trim(),
         verificationStatus: 'PENDING',
       })
-      setSaveSuccess('Document added successfully. Verification is pending.')
+      const created = res.data?.data
+      if (created) {
+        setDocuments(prev => [created, ...prev])
+      } else {
+        fetchDocuments()
+      }
+      showSuccessMsg('Document added successfully. Verification is pending.')
       setForm({ docType: 'ID_PROOF', fileUri: '' })
       setShowForm(false)
-      fetchDocuments()
     } catch (err) {
       setSaveError(err?.response?.data?.message || 'Failed to add document')
     } finally {

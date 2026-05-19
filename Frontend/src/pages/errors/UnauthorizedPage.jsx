@@ -1,20 +1,18 @@
 import { Link } from 'react-router-dom'
-import PublicLayout from '../../components/layout/PublicLayout'
 
-const UnauthorizedPage = () => {
-  return (
-    <PublicLayout>
-      <div className="row justify-content-center">
-        <div className="col-lg-7">
-          <div className="card card-surface p-5 text-center shadow-soft">
-            <h1 className="display-4">Unauthorized</h1>
-            <p className="lead text-muted">You do not have permission to access this page.</p>
-            <Link to="/login" className="btn btn-primary">Return to Login</Link>
-          </div>
-        </div>
-      </div>
-    </PublicLayout>
-  )
-}
+const UnauthorizedPage = () => (
+  <div className="hn-auth-page">
+    <div className="hn-auth-card" style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
+      <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', marginBottom: '12px' }}>Unauthorized</h1>
+      <p style={{ color: '#64748b', marginBottom: '28px', fontSize: '15px' }}>
+        You do not have permission to access this page.
+      </p>
+      <Link to="/login" className="hn-btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 'auto', padding: '0 32px' }}>
+        Return to Login
+      </Link>
+    </div>
+  </div>
+)
 
 export default UnauthorizedPage

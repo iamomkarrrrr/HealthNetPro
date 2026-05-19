@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import Input from '../../components/common/Input'
-import Button from '../../components/common/Button'
-import ErrorMessage from '../../components/common/ErrorMessage'
-import PublicLayout from '../../components/layout/PublicLayout'
 import useAuth from '../../hooks/useAuth'
 import { LOGIN_ROLE_OPTIONS, CITIZEN } from '../../utils/roles'
+
+const CrossIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+    <rect x="9" y="2" width="6" height="20" rx="2" fill="white" />
+    <rect x="2" y="9" width="20" height="6" rx="2" fill="white" />
+  </svg>
+)
 
 const LoginPage = () => {
   const { login, loading, error } = useAuth()
@@ -33,65 +36,73 @@ const LoginPage = () => {
   }
 
   return (
-    <PublicLayout>
-      <div className="row justify-content-center">
-        <div className="col-xl-5 col-lg-6">
-          <div className="card card-surface p-4 shadow-soft">
-            <div className="mb-4 text-center">
-              <h3 className="mb-1">Sign in to HealthNet</h3>
-              <p className="text-muted">Enter your credentials to access your secure dashboard.</p>
-            </div>
-            {error && <ErrorMessage message={error} />}
-            <form onSubmit={handleSubmit} noValidate>
-              <Input
-                id="email"
-                label="Email"
-                name="email"
-                type="email"
-                value={form.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                error={formError.email}
-              />
-              <Input
-                id="password"
-                label="Password"
-                name="password"
-                type="password"
-                value={form.password}
-                onChange={handleChange}
-                placeholder="Enter your password"
-                error={formError.password}
-              />
-              <div className="mb-3">
-                <label htmlFor="role" className="form-label">Role</label>
-                <select
-                  id="role"
-                  name="role"
-                  className={`form-select ${formError.role ? 'is-invalid' : ''}`}
-                  value={form.role}
-                  onChange={handleChange}
-                >
-                  {LOGIN_ROLE_OPTIONS.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-                {formError.role && <div className="invalid-feedback">{formError.role}</div>}
-              </div>
-              <div className="d-flex justify-content-between align-items-center mb-4">
-                <Link to="/forgot-password" className="small">Forgot password?</Link>
-              </div>
-              <Button type="submit" className="w-100" disabled={loading}>
-                {loading ? 'Signing in…' : 'Sign in'}
-              </Button>
-            </form>
-            <p className="text-center text-muted small mt-4">
-              New to HealthNet? <Link to="/register">Register as a citizen</Link>
-            </p>
+    <div className="hn-auth-page">
+      <div className="hn-auth-card">
+        {/* Brand */}
+        <div className="hn-auth-brand">
+          <div className="hn-auth-logo"><CrossIcon /></div>
+          <div className="hn-auth-title">HealthNet</div>
+          <div className="hn-auth-subtitle">National Public Health &amp; Disease Surveillance System</div>
+        </div>
+
+        <div className="hn-form-heading">Sign in to your account</div>
+
+        {error && <div className="hn-auth-error">{error}</div>}
+
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="hn-field">
+            <label htmlFor="email">Email address</label>
+            <input
+              id="email" name="email" type="email"
+              className={`hn-input${formError.email ? ' is-invalid' : ''}`}
+              value={form.email} onChange={handleChange}
+              placeholder="you@example.com"
+            />
+            {formError.email && <span className="hn-field-error">{formError.email}</span>}
           </div>
+
+          <div className="hn-field">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password" name="password" type="password"
+              className={`hn-input${formError.password ? ' is-invalid' : ''}`}
+              value={form.password} onChange={handleChange}
+              placeholder="Enter your password"
+            />
+            {formError.password && <span className="hn-field-error">{formError.password}</span>}
+          </div>
+
+          <div className="hn-field">
+            <label htmlFor="role">Role</label>
+            <select
+              id="role" name="role"
+              className={`hn-select${formError.role ? ' is-invalid' : ''}`}
+              value={form.role} onChange={handleChange}
+            >
+              {LOGIN_ROLE_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            {formError.role && <span className="hn-field-error">{formError.role}</span>}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <Link to="/forgot-password" className="hn-auth-link" style={{ fontSize: '13px' }}>
+              Forgot password?
+            </Link>
+          </div>
+
+          <button type="submit" className="hn-btn-primary" disabled={loading}>
+            {loading ? <><span className="hn-spinner" /> Please wait...</> : 'Sign in'}
+          </button>
+        </form>
+
+        <div className="hn-auth-footer">
+          New to HealthNet?{' '}
+          <Link to="/register" className="hn-auth-link">Register as a citizen</Link>
         </div>
       </div>
-    </PublicLayout>
+    </div>
   )
 }
 

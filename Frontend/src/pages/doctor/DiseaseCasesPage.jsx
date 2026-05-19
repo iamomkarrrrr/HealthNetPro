@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -17,26 +17,36 @@ const DiseaseCasesPage = () => {
   const [citizens, setCitizens] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [editTarget, setEditTarget] = useState(null) // case object being edited
+  const [editTarget, setEditTarget] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const [fetchError, setFetchError] = useState('')
   const [filterStatus, setFilterStatus] = useState('ALL')
+  const successTimer = useRef(null)
 
-  const fetchAll = useCallback(() => {
+  // Load once on mount — never re-triggers loading spinner after save
+  useEffect(() => {
+    let mounted = true
     setLoading(true)
     Promise.allSettled([getAllDiseaseCases(), getAllCitizens()])
       .then(([c, p]) => {
+        if (!mounted) return
         if (c.status === 'fulfilled') setCases(c.value.data?.data ?? [])
         else setFetchError(c.reason?.response?.data?.message || 'Failed to load cases')
         if (p.status === 'fulfilled') setCitizens(p.value.data?.data ?? [])
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -50,12 +60,7 @@ const DiseaseCasesPage = () => {
 
   const openEdit = (c) => {
     setEditTarget(c)
-    setForm({
-      citizenId: String(c.citizenId),
-      diseaseType: c.diseaseType,
-      diagnosisDate: c.diagnosisDate,
-      status: c.status,
-    })
+    setForm({ citizenId: String(c.citizenId), diseaseType: c.diseaseType, diagnosisDate: c.diagnosisDate, status: c.status })
     setSaveError('')
     setSaveSuccess('')
     setShowForm(true)
@@ -73,26 +78,40 @@ const DiseaseCasesPage = () => {
     setSaving(true)
     try {
       if (editTarget) {
-        await updateDiseaseCase(editTarget.id, {
+        const res = await updateDiseaseCase(editTarget.id, {
           diseaseType: form.diseaseType,
           diagnosisDate: form.diagnosisDate,
           status: form.status,
         })
-        setSaveSuccess('Case updated successfully.')
+        const updated = res.data?.data ?? { ...editTarget, ...form }
+        // Optimistic update — replace in list immediately
+        setCases(prev => prev.map(c => c.id === editTarget.id ? { ...c, ...updated } : c))
+        showSuccess('Case updated successfully.')
       } else {
-        await createDiseaseCase({
+        const res = await createDiseaseCase({
           citizenId: Number(form.citizenId),
           doctorId: user.userId,
           diseaseType: form.diseaseType,
           diagnosisDate: form.diagnosisDate,
           status: form.status,
         })
-        setSaveSuccess('Case created successfully.')
+        const created = res.data?.data
+        if (created) {
+          // Add new record to top of list immediately
+          setCases(prev => [created, ...prev])
+        } else {
+          // Fallback: background refresh without blocking UI — show subtle refreshing state
+          setRefreshing(true)
+          getAllDiseaseCases()
+            .then(r => setCases(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Case created successfully.')
       }
       setForm(EMPTY_FORM)
       setShowForm(false)
       setEditTarget(null)
-      fetchAll()
     } catch (err) {
       setSaveError(err?.response?.data?.message || 'Failed to save case')
     } finally {
@@ -114,10 +133,15 @@ const DiseaseCasesPage = () => {
       </div>
 
       {fetchError && <div className="alert alert-danger py-2">{fetchError}</div>}
-      {saveError && <div className="alert alert-danger py-2">{saveError}</div>}
+      {saveError  && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing cases…
+        </div>
+      )}
 
-      {/* Create / Edit form */}
       {showForm && (
         <Card title={editTarget ? `Edit Case #${editTarget.id}` : 'Report New Disease Case'} className="mb-4">
           <form onSubmit={handleSubmit} noValidate>
@@ -127,42 +151,19 @@ const DiseaseCasesPage = () => {
                 {citizens.length > 0 ? (
                   <select name="citizenId" className="form-select" value={form.citizenId} onChange={handleChange} disabled={!!editTarget}>
                     <option value="">— Select citizen —</option>
-                    {citizens.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} (ID: {c.id})</option>
-                    ))}
+                    {citizens.map(c => <option key={c.id} value={c.id}>{c.name} (ID: {c.id})</option>)}
                   </select>
                 ) : (
-                  <input
-                    type="number"
-                    name="citizenId"
-                    className="form-control"
-                    value={form.citizenId}
-                    onChange={handleChange}
-                    placeholder="Enter citizen ID"
-                    disabled={!!editTarget}
-                  />
+                  <input type="number" name="citizenId" className="form-control" value={form.citizenId} onChange={handleChange} placeholder="Enter citizen ID" disabled={!!editTarget} />
                 )}
               </div>
               <div className="col-md-6">
                 <label className="form-label">Disease Type <span className="text-danger">*</span></label>
-                <input
-                  type="text"
-                  name="diseaseType"
-                  className="form-control"
-                  value={form.diseaseType}
-                  onChange={handleChange}
-                  placeholder="e.g. Dengue, COVID-19"
-                />
+                <input type="text" name="diseaseType" className="form-control" value={form.diseaseType} onChange={handleChange} placeholder="e.g. Dengue, COVID-19" />
               </div>
               <div className="col-md-6">
                 <label className="form-label">Diagnosis Date <span className="text-danger">*</span></label>
-                <input
-                  type="date"
-                  name="diagnosisDate"
-                  className="form-control"
-                  value={form.diagnosisDate}
-                  onChange={handleChange}
-                />
+                <input type="date" name="diagnosisDate" className="form-control" value={form.diagnosisDate} onChange={handleChange} />
               </div>
               <div className="col-md-6">
                 <label className="form-label">Status</label>
@@ -179,14 +180,9 @@ const DiseaseCasesPage = () => {
         </Card>
       )}
 
-      {/* Filter tabs */}
       <div className="d-flex gap-2 mb-3 flex-wrap">
         {['ALL', ...CASE_STATUSES].map(s => (
-          <button
-            key={s}
-            className={`btn btn-sm ${filterStatus === s ? 'btn-primary' : 'btn-outline-secondary'}`}
-            onClick={() => setFilterStatus(s)}
-          >
+          <button key={s} className={`btn btn-sm ${filterStatus === s ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setFilterStatus(s)}>
             {s.replace(/_/g, ' ')}
           </button>
         ))}
@@ -200,14 +196,7 @@ const DiseaseCasesPage = () => {
         <div className="table-responsive">
           <table className="table table-hover align-middle">
             <thead className="table-light">
-              <tr>
-                <th>ID</th>
-                <th>Citizen ID</th>
-                <th>Disease Type</th>
-                <th>Diagnosis Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
+              <tr><th>ID</th><th>Citizen ID</th><th>Disease Type</th><th>Diagnosis Date</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {myCases.map(c => (
@@ -217,9 +206,7 @@ const DiseaseCasesPage = () => {
                   <td>{c.diseaseType}</td>
                   <td>{c.diagnosisDate}</td>
                   <td><StatusBadge status={c.status} /></td>
-                  <td>
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(c)}>Edit</button>
-                  </td>
+                  <td><button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(c)}>Edit</button></td>
                 </tr>
               ))}
             </tbody>

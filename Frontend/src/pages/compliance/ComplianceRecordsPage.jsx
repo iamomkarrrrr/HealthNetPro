@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import Card from '../../components/common/Card'
 import Button from '../../components/common/Button'
@@ -26,21 +26,31 @@ const ComplianceRecordsPage = () => {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
-  const fetchRecords = useCallback(() => {
+  const successTimer = useRef(null)
+  const showSuccess = (msg) => {
+    setSaveSuccess(msg)
+    clearTimeout(successTimer.current)
+    successTimer.current = setTimeout(() => setSaveSuccess(''), 3000)
+  }
+
+  // Reload records when typeFilter changes — separate loading, no spinner on save
+  useEffect(() => {
+    let mounted = true
     setLoading(true)
     setFetchError('')
     getComplianceRecordsByType(typeFilter)
-      .then(res => setRecords(res.data?.data ?? []))
+      .then(res => { if (mounted) setRecords(res.data?.data ?? []) })
       .catch(err => {
+        if (!mounted) return
         if (err?.response?.status === 403) setFetchError('Access denied. Your role may not have permission to view compliance records.')
         else if (!err?.response) setFetchError('Backend server is not reachable.')
         else setFetchError(err?.response?.data?.message || 'Failed to load compliance records')
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [typeFilter])
-
-  useEffect(() => { fetchRecords() }, [fetchRecords])
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -69,24 +79,30 @@ const ComplianceRecordsPage = () => {
     if (!form.date)     { setSaveError('Date is required.'); return }
     setSaving(true)
     try {
-      const payload = {
-        entityId: Number(form.entityId),
-        type: form.type,
-        result: form.result,
-        date: form.date,
-        notes: form.notes,
-      }
+      const payload = { entityId: Number(form.entityId), type: form.type, result: form.result, date: form.date, notes: form.notes }
       if (editTarget) {
-        await updateComplianceRecord(editTarget.id, payload)
-        setSaveSuccess('Compliance record updated successfully.')
+        const res = await updateComplianceRecord(editTarget.id, payload)
+        const updated = res.data?.data ?? { ...editTarget, ...payload }
+        setRecords(prev => prev.map(r => r.id === editTarget.id ? { ...r, ...updated } : r))
+        showSuccess('Compliance record updated successfully.')
       } else {
-        await createComplianceRecord(payload)
-        setSaveSuccess('Compliance record created successfully.')
+        const res = await createComplianceRecord(payload)
+        const created = res.data?.data
+        if (created) {
+          setRecords(prev => [created, ...prev])
+        } else {
+          // Background refresh without blocking UI
+          setRefreshing(true)
+          getComplianceRecordsByType(typeFilter)
+            .then(r => setRecords(r.data?.data ?? []))
+            .catch(() => {})
+            .finally(() => setRefreshing(false))
+        }
+        showSuccess('Compliance record created successfully.')
       }
       setForm(EMPTY)
       setShowForm(false)
       setEditTarget(null)
-      fetchRecords()
     } catch (err) {
       if (err?.response?.status === 403) setSaveError('Access denied. Your role may not have permission to create compliance records.')
       else setSaveError(err?.response?.data?.message || 'Failed to save compliance record')
@@ -110,6 +126,12 @@ const ComplianceRecordsPage = () => {
       {fetchError && <div className="alert alert-warning">{fetchError}</div>}
       {saveError  && <div className="alert alert-danger py-2">{saveError}</div>}
       {saveSuccess && <div className="alert alert-success py-2">{saveSuccess}</div>}
+      {refreshing && (
+        <div className="text-muted small mb-2">
+          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Refreshing records…
+        </div>
+      )}
 
       {/* Create / Edit form */}
       {showForm && (

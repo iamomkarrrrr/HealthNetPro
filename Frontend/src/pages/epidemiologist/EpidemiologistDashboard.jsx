@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import DashboardLayout from '../../components/layout/DashboardLayout'
-import Card from '../../components/common/Card'
-import Loader from '../../components/common/Loader'
-import StatusBadge from '../../components/common/StatusBadge'
+import { WelcomeBanner, StatCard, SectionCard, QuickLink, ListRow, AlertBanner, ShellLoader, StatusPill } from '../../components/layout/DashboardShell'
 import useAuth from '../../hooks/useAuth'
 import { getAllOutbreaks } from '../../api/outbreakApi'
 import { getAllDiseaseCases } from '../../api/diseaseCaseApi'
@@ -20,194 +17,143 @@ const EpidemiologistDashboard = () => {
 
   useEffect(() => {
     if (!user?.userId) return
-    Promise.allSettled([
-      getAllOutbreaks(),
-      getAllDiseaseCases(),
-      getNotificationsByUserId(user.userId),
-      getComplianceRecordsByType('OUTBREAK'),
-    ]).then(([ob, cs, nt, co]) => {
-      if (ob.status === 'fulfilled') setOutbreaks(ob.value.data?.data ?? [])
-      if (cs.status === 'fulfilled') setCases(cs.value.data?.data ?? [])
-      if (nt.status === 'fulfilled') setNotifications(nt.value.data?.data ?? [])
-      if (co.status === 'fulfilled') setCompliance(co.value.data?.data ?? [])
-    }).finally(() => setLoading(false))
+    Promise.allSettled([getAllOutbreaks(), getAllDiseaseCases(), getNotificationsByUserId(user.userId), getComplianceRecordsByType('OUTBREAK')])
+      .then(([ob, cs, nt, co]) => {
+        if (ob.status === 'fulfilled') setOutbreaks(ob.value.data?.data ?? [])
+        if (cs.status === 'fulfilled') setCases(cs.value.data?.data ?? [])
+        if (nt.status === 'fulfilled') setNotifications(nt.value.data?.data ?? [])
+        if (co.status === 'fulfilled') setCompliance(co.value.data?.data ?? [])
+      }).finally(() => setLoading(false))
   }, [user?.userId])
 
-  const activeOutbreaks = outbreaks.filter(o => ['DETECTED', 'ACTIVE'].includes(o.status))
-  const resolvedOutbreaks = outbreaks.filter(o => ['CONTAINED', 'CLOSED'].includes(o.status))
+  const activeOutbreaks = outbreaks.filter(o => ['DETECTED','ACTIVE'].includes(o.status))
+  const containedOutbreaks = outbreaks.filter(o => ['CONTAINED','CLOSED'].includes(o.status))
+  const activeCases = cases.filter(c => ['REPORTED','UNDER_TREATMENT'].includes(c.status))
   const unread = notifications.filter(n => n.status === 'UNREAD')
+  const compIssues = compliance.filter(r => ['FAIL','NON_COMPLIANT'].includes(r.result))
 
-  // Disease type frequency map
-  const diseaseFreq = cases.reduce((acc, c) => {
-    acc[c.diseaseType] = (acc[c.diseaseType] || 0) + 1
-    return acc
-  }, {})
-  const topDiseases = Object.entries(diseaseFreq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-
-  const QUICK_ACTIONS = [
-    { label: 'Manage Outbreaks', to: '/epidemiologist/outbreaks', desc: 'Create and update outbreak records.' },
-    { label: 'Epidemiology Data', to: '/epidemiologist/epidemiology-data', desc: 'Add and analyze outbreak metrics.' },
-    { label: 'Disease Trends', to: '/epidemiologist/disease-trends', desc: 'View aggregated disease case analytics.' },
-    { label: 'Reports', to: '/epidemiologist/reports', desc: 'Browse outbreak and case reports.' },
-    { label: 'Compliance Tracking', to: '/epidemiologist/compliance-tracking', desc: 'View outbreak compliance records.' },
-    { label: 'Notifications', to: '/epidemiologist/notifications', desc: `${unread.length} unread alert(s).` },
-  ]
+  const diseaseFreq = cases.reduce((acc, c) => { acc[c.diseaseType] = (acc[c.diseaseType] || 0) + 1; return acc }, {})
+  const topDiseases = Object.entries(diseaseFreq).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const total = cases.length
 
   return (
     <DashboardLayout>
-      <div className="mb-4">
-        <h2 className="page-title">Epidemiologist Console</h2>
-        <p className="text-muted">
-          Welcome, <strong>{user?.name}</strong>. Monitor disease trends, outbreak patterns, and compliance status.
-        </p>
-      </div>
+      <WelcomeBanner
+        name={user?.name}
+        role="Epidemiologist"
+        subtitle="Monitor disease trends, outbreak patterns, and compliance status across regions."
+        gradient="linear-gradient(135deg,#fef3c7 0%,#fde68a 30%,#e0f2fe 100%)"
+      />
 
-      {loading ? <Loader message="Loading dashboard…" /> : (
+      {activeOutbreaks.length > 0 && (
+        <AlertBanner type="danger">
+          <strong>{activeOutbreaks.length} active outbreak{activeOutbreaks.length > 1 ? 's' : ''} require immediate attention:</strong>{' '}
+          {activeOutbreaks.map(o => `${o.diseaseType} (${o.location})`).join(' · ')}.
+        </AlertBanner>
+      )}
+
+      {loading ? <ShellLoader message="Loading surveillance data…" /> : (
         <>
-          {/* Stat cards */}
-          <div className="row g-4 mb-4">
-            <div className="col-md-6 col-xl-3">
-              <div className="card card-surface h-100">
-                <div className="card-body">
-                  <div className="text-muted small mb-1">Active Outbreaks</div>
-                  <h4 className={`mb-1 ${activeOutbreaks.length > 0 ? 'text-danger' : 'text-success'}`}>
-                    {activeOutbreaks.length}
-                  </h4>
-                  <div className="text-muted small">Detected or active</div>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-6 col-xl-3">
-              <div className="card card-surface h-100">
-                <div className="card-body">
-                  <div className="text-muted small mb-1">Contained / Closed</div>
-                  <h4 className="mb-1 text-success">{resolvedOutbreaks.length}</h4>
-                  <div className="text-muted small">Resolved outbreaks</div>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-6 col-xl-3">
-              <div className="card card-surface h-100">
-                <div className="card-body">
-                  <div className="text-muted small mb-1">Total Disease Cases</div>
-                  <h4 className="mb-1">{cases.length}</h4>
-                  <div className="text-muted small">All reported cases</div>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-6 col-xl-3">
-              <div className="card card-surface h-100">
-                <div className="card-body">
-                  <div className="text-muted small mb-1">Unread Notifications</div>
-                  <h4 className={`mb-1 ${unread.length > 0 ? 'text-warning' : ''}`}>{unread.length}</h4>
-                  <div className="text-muted small">Pending alerts</div>
-                </div>
-              </div>
-            </div>
+          {/* Stats */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'16px', marginBottom:'24px' }}>
+            <StatCard
+              label="Active Outbreaks" value={activeOutbreaks.length}
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
+              iconBg="linear-gradient(135deg,#dc2626,#f87171)"
+              border="#fecaca" shadow="rgba(220,38,38,0.08)" shadowHover="rgba(220,38,38,0.18)"
+              valueColor={activeOutbreaks.length > 0 ? '#991b1b' : '#065f46'} desc="Detected or active"
+              to="/epidemiologist/outbreaks"
+            />
+            <StatCard
+              label="Contained / Closed" value={containedOutbreaks.length}
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+              iconBg="linear-gradient(135deg,#059669,#34d399)"
+              border="#bbf7d0" shadow="rgba(5,150,105,0.08)" shadowHover="rgba(5,150,105,0.18)"
+              valueColor="#065f46" desc="Resolved outbreaks"
+              to="/epidemiologist/outbreaks"
+            />
+            <StatCard
+              label="Total Disease Cases" value={cases.length}
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+              iconBg="linear-gradient(135deg,#0284c7,#38bdf8)"
+              border="#bae6fd" shadow="rgba(2,132,199,0.08)" shadowHover="rgba(2,132,199,0.18)"
+              valueColor="#0369a1" desc={`${activeCases.length} still active`}
+              to="/epidemiologist/disease-trends"
+            />
+            <StatCard
+              label="Unread Alerts" value={unread.length}
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
+              iconBg="linear-gradient(135deg,#7c3aed,#a78bfa)"
+              border="#ddd6fe" shadow="rgba(124,58,237,0.08)" shadowHover="rgba(124,58,237,0.18)"
+              valueColor="#5b21b6" desc="Pending notifications"
+              to="/epidemiologist/notifications"
+            />
           </div>
 
-          {/* Quick actions */}
-          <div className="row g-4 mb-4">
-            {QUICK_ACTIONS.map(({ label, to, desc }) => (
-              <div key={to} className="col-md-6 col-xl-4">
-                <Link to={to} className="text-decoration-none">
-                  <div className="card card-surface h-100 border-0 shadow-sm">
-                    <div className="card-body">
-                      <h6 className="text-primary mb-1">{label}</h6>
-                      <p className="text-muted small mb-0">{desc}</p>
-                    </div>
-                  </div>
-                </Link>
+          {/* Quick Actions */}
+          <div style={{ marginBottom:'24px' }}>
+            <SectionCard title="Quick Actions" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px' }}>
+                <QuickLink to="/epidemiologist/outbreaks" label="Manage Outbreaks" desc="Create & update outbreak records" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>} iconBg="linear-gradient(135deg,#dc2626,#f87171)" />
+                <QuickLink to="/epidemiologist/epidemiology-data" label="Epidemiology Data" desc="Add & analyze outbreak metrics" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>} iconBg="linear-gradient(135deg,#0284c7,#38bdf8)" />
+                <QuickLink to="/epidemiologist/disease-trends" label="Disease Trends" desc="Aggregated case analytics" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} iconBg="linear-gradient(135deg,#059669,#34d399)" />
+                <QuickLink to="/epidemiologist/reports" label="Reports" desc="Browse outbreak & case reports" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} iconBg="linear-gradient(135deg,#d97706,#fbbf24)" />
+                <QuickLink to="/epidemiologist/compliance-tracking" label="Compliance Tracking" desc="View outbreak compliance" icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} iconBg="linear-gradient(135deg,#7c3aed,#a78bfa)" />
+                <QuickLink to="/epidemiologist/notifications" label="Notifications" desc={`${unread.length} unread alert(s)`} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} iconBg="linear-gradient(135deg,#be185d,#f472b6)" />
               </div>
-            ))}
+            </SectionCard>
           </div>
 
           {/* Bottom row */}
-          <div className="row g-4">
-            {/* Recent outbreaks */}
-            <div className="col-lg-5">
-              <Card title="Recent Outbreaks">
-                {outbreaks.length === 0 ? (
-                  <p className="text-muted small mb-0">No outbreaks recorded.</p>
-                ) : (
-                  <ul className="list-unstyled mb-0">
-                    {outbreaks.slice(0, 5).map(o => (
-                      <li key={o.id} className="d-flex justify-content-between align-items-center py-2 border-bottom">
-                        <div>
-                          <div className="small fw-medium">{o.diseaseType}</div>
-                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>📍 {o.location}</div>
-                        </div>
-                        <StatusBadge status={o.status} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3">
-                  <Link to="/epidemiologist/outbreaks" className="btn btn-sm btn-outline-primary">View all</Link>
-                </div>
-              </Card>
-            </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'20px' }}>
+            <SectionCard
+              title="Recent Outbreaks"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
+              accent="linear-gradient(135deg,#dc2626,#f87171)"
+              action="View all" actionTo="/epidemiologist/outbreaks"
+            >
+              {outbreaks.length === 0
+                ? <p style={{ fontSize:'13px', color:'#94a3b8', margin:0 }}>No outbreaks recorded.</p>
+                : outbreaks.slice(0,5).map(o => (
+                  <ListRow key={o.id} left={o.diseaseType} sub={`📍 ${o.location}`} badge={o.status} />
+                ))
+              }
+            </SectionCard>
 
-            {/* Top disease types */}
-            <div className="col-lg-4">
-              <Card title="Top Disease Types">
-                {topDiseases.length === 0 ? (
-                  <p className="text-muted small mb-0">No case data available.</p>
-                ) : (
-                  <ul className="list-unstyled mb-0">
-                    {topDiseases.map(([disease, count]) => (
-                      <li key={disease} className="d-flex justify-content-between py-2 border-bottom">
-                        <span className="small">{disease}</span>
-                        <span className="badge bg-primary">{count}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3">
-                  <Link to="/epidemiologist/disease-trends" className="btn btn-sm btn-outline-primary">View trends</Link>
-                </div>
-              </Card>
-            </div>
-
-            {/* Recent notifications */}
-            <div className="col-lg-3">
-              <Card title="Notifications">
-                {unread.length === 0 ? (
-                  <p className="text-muted small mb-0">No unread notifications.</p>
-                ) : (
-                  <ul className="list-unstyled mb-0">
-                    {unread.slice(0, 4).map(n => (
-                      <li key={n.id} className="py-2 border-bottom">
-                        <div className="small text-truncate">{n.message}</div>
-                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>{n.category}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3">
-                  <Link to="/epidemiologist/notifications" className="btn btn-sm btn-outline-primary">View all</Link>
-                </div>
-              </Card>
-            </div>
-          </div>
-
-          {/* Active outbreak alert banner */}
-          {activeOutbreaks.length > 0 && (
-            <div className="row g-4 mt-0">
-              <div className="col-12">
-                <div className="alert alert-danger d-flex align-items-center gap-2 mb-0">
-                  <span className="fs-5">⚠️</span>
-                  <div>
-                    <strong>{activeOutbreaks.length} active outbreak{activeOutbreaks.length > 1 ? 's' : ''}:</strong>{' '}
-                    {activeOutbreaks.map(o => `${o.diseaseType} (${o.location})`).join(' · ')}.{' '}
-                    <Link to="/epidemiologist/outbreaks" className="alert-link">Manage →</Link>
+            <SectionCard
+              title="Top Disease Types"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>}
+              accent="linear-gradient(135deg,#0284c7,#38bdf8)"
+              action="View trends" actionTo="/epidemiologist/disease-trends"
+            >
+              {topDiseases.length === 0
+                ? <p style={{ fontSize:'13px', color:'#94a3b8', margin:0 }}>No case data available.</p>
+                : topDiseases.map(([disease, count]) => (
+                  <div key={disease} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
+                    <span style={{ fontSize:'13px', fontWeight:'600', color:'#0f172a' }}>{disease}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                      <div style={{ width:`${Math.min((count/total)*80,80)}px`, height:'5px', borderRadius:'4px', background:'linear-gradient(90deg,#0284c7,#06b6d4)' }} />
+                      <span style={{ fontSize:'12px', fontWeight:'700', color:'#0284c7', minWidth:'24px', textAlign:'right' }}>{count}</span>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
+                ))
+              }
+            </SectionCard>
+
+            <SectionCard
+              title="Notifications"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
+              accent="linear-gradient(135deg,#7c3aed,#a78bfa)"
+              action="View all" actionTo="/epidemiologist/notifications"
+            >
+              {unread.length === 0
+                ? <p style={{ fontSize:'13px', color:'#94a3b8', margin:0 }}>✅ No unread notifications.</p>
+                : unread.slice(0,4).map(n => (
+                  <ListRow key={n.id} left={n.message} sub={n.category} badge={n.status} />
+                ))
+              }
+            </SectionCard>
+          </div>
         </>
       )}
     </DashboardLayout>
