@@ -1,0 +1,5 @@
+package com.healthnet.enums;
+
+public enum UserRole {
+	CITIZEN, DOCTOR, EPIDEMIOLOGIST, HEALTH_ADMINISTRATOR, ADMIN, COMPLIANCE_OFFICER, AUDITOR
+}
